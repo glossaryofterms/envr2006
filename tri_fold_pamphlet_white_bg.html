@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Grange Park — Interactive Tri-fold Pamphlet</title>
+  <style>
+    :root {
+      --ink: #252823;
+      --muted: #686b63;
+      --green: #61764f;
+      --gold: #c59a45;
+      --canvas: #ffffff;
+      --control: #fffefa;
+      --line: rgba(50, 46, 35, .14);
+      --focus: #9a742e;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 280px; background: #fff; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100svh;
+      padding: clamp(18px, 3.2vw, 42px) 16px 28px;
+      color: var(--ink);
+      background: #fff;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button, input { font: inherit; }
+
+    .app {
+      width: min(100%, 1080px);
+      margin-inline: auto;
+    }
+
+
+    .viewer-card {
+      padding: clamp(16px, 3vw, 30px);
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+    }
+
+    .scene-wrap {
+      display: grid;
+      place-items: center;
+      padding: 4px 0 12px;
+    }
+
+    #scene {
+      position: relative;
+      width: min(92vw, 90vh, 980px);
+      aspect-ratio: 2048 / 1582;
+      perspective: 1450px;
+      perspective-origin: 50% 50%;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      outline: none;
+      cursor: grab;
+    }
+
+    #scene::before { content: none; }
+
+    #scene:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 8px;
+      border-radius: 3px;
+    }
+
+    #scene.dragging { cursor: grabbing; }
+
+    .pamphlet {
+      --yaw: -12deg;
+      --pitch: -5deg;
+      --left-fold: 0deg;
+      --right-fold: 0deg;
+      --left-depth: 0px;
+      --right-depth: 0px;
+      position: absolute;
+      z-index: 1;
+      inset: 0;
+      transform: rotateX(var(--pitch)) rotateY(var(--yaw));
+      transform-style: preserve-3d;
+      transform-origin: 50% 50%;
+      transition: transform 440ms cubic-bezier(.2, .72, .22, 1);
+    }
+
+    .panel {
+      position: absolute;
+      top: 0;
+      width: 33.3333333333%;
+      height: 100%;
+      transform-style: preserve-3d;
+      backface-visibility: visible;
+      transition: transform 760ms cubic-bezier(.2, .78, .18, 1);
+    }
+
+    .panel--left {
+      left: 0;
+      transform-origin: 100% 50%;
+      transform: translateZ(var(--left-depth)) rotateY(var(--left-fold));
+    }
+
+    .panel--center { left: 33.3333333333%; }
+
+    .panel--right {
+      left: 66.6666666667%;
+      transform-origin: 0% 50%;
+      transform: translateZ(var(--right-depth)) rotateY(var(--right-fold));
+    }
+
+    .face {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background-color: #f7f6f1;
+      background-repeat: no-repeat;
+      background-size: 300% 100%;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      box-shadow: inset 0 0 0 .45px rgba(31, 28, 21, .15);
+    }
+
+    .face--inside {
+      background-image: url("inside.jpg");
+      background-position: var(--inside-pos) center;
+      transform: translateZ(.9px);
+    }
+
+    .face--outside {
+      background-image: url("outside.jpg");
+      background-position: var(--outside-pos) center;
+      transform: rotateY(180deg) translateZ(.9px);
+    }
+
+    .panel--left { --inside-pos: 0%; --outside-pos: 100%; }
+    .panel--center { --inside-pos: 50%; --outside-pos: 50%; }
+    .panel--right { --inside-pos: 100%; --outside-pos: 0%; }
+
+    .gesture-hint {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: .81rem;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .controls {
+      margin-top: 20px;
+      padding-top: 19px;
+      border-top: 1px solid var(--line);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 9px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 43px;
+      padding: 10px 17px;
+      border: 1px solid #d8d2c4;
+      border-radius: 999px;
+      color: var(--ink);
+      background: var(--control);
+      font-size: .9rem;
+      font-weight: 680;
+      cursor: pointer;
+      transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+    }
+
+    .button:hover { background: #f5f1e7; border-color: #b9ad92; }
+    .button:active { transform: translateY(1px); }
+
+    .button--primary {
+      border-color: #d8d2c4;
+      color: var(--ink);
+      background: var(--control);
+    }
+
+    .button--primary:hover { background: #f5f1e7; border-color: #b9ad92; }
+
+    .button:focus-visible,
+    input:focus-visible + .range-track,
+    input[type="range"]:focus-visible,
+    input[type="checkbox"]:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 3px;
+    }
+
+    .button svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+
+    .adjustments {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px 26px;
+      max-width: 700px;
+      margin: 24px auto 0;
+    }
+
+    .range-field { min-width: 0; }
+
+    .range-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 9px;
+    }
+
+    .range-heading label {
+      color: #44473f;
+      font-size: .82rem;
+      font-weight: 700;
+    }
+
+    output {
+      min-width: 45px;
+      color: var(--green);
+      font-size: .8rem;
+      font-variant-numeric: tabular-nums;
+      font-weight: 750;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      display: block;
+      width: 100%;
+      height: 22px;
+      margin: 0;
+      accent-color: var(--green);
+      cursor: ew-resize;
+    }
+
+
+
+    @media (prefers-reduced-motion: reduce) {
+      .pamphlet, .panel, .button {
+        transition-duration: .001ms !important;
+      }
+    }
+
+    @media (max-width: 620px) {
+      body { padding-inline: 10px; }
+      .viewer-card { padding: 14px 10px 16px; border-radius: 16px; }
+      #scene { width: min(94vw, 90vh, 980px); }
+      .gesture-hint { max-width: 38ch; margin-inline: auto; font-size: .76rem; }
+      .button-row { gap: 8px; }
+      .button { min-height: 41px; padding: 9px 13px; font-size: .83rem; }
+      .adjustments { gap: 15px; margin-top: 21px; }
+      .range-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+      output { text-align: left; }
+    }
+
+    @media (max-width: 360px) {
+      .adjustments { grid-template-columns: 1fr; }
+      .button { flex: 1 1 calc(50% - 8px); }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+
+    <section class="viewer-card" aria-label="Interactive tri-fold pamphlet viewer">
+      <div class="scene-wrap">
+        <div
+          id="scene"
+          tabindex="0"
+          role="region"
+          aria-label="Interactive 3D pamphlet. Drag with a mouse or touch to rotate. Use the arrow keys to rotate, F to fold, U to unfold, V to flip sides, and R to reset."
+        >
+          <div id="pamphlet" class="pamphlet" role="img" aria-label="Unfolded pamphlet, inside artwork facing forward">
+            <div class="panel panel--left" aria-hidden="true">
+              <div class="face face--inside"></div>
+              <div class="face face--outside"></div>
+            </div>
+            <div class="panel panel--center" aria-hidden="true">
+              <div class="face face--inside"></div>
+              <div class="face face--outside"></div>
+            </div>
+            <div class="panel panel--right" aria-hidden="true">
+              <div class="face face--inside"></div>
+              <div class="face face--outside"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="gesture-hint">Drag the pamphlet with mouse or arrow keys to rotate it.</p>
+
+      <div class="controls" aria-label="Pamphlet controls">
+        <div class="button-row">
+          <button class="button button--primary" id="foldButton" type="button" title="Fold both side panels inward">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="m8 5 4 7-4 7M16 5l-4 7 4 7"/></svg>
+            Fold
+          </button>
+          <button class="button" id="unfoldButton" type="button" title="Open all three panels">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v14H3z"/><path d="M9 5v14M15 5v14"/></svg>
+            Unfold
+          </button>
+          <button class="button" id="flipButton" type="button" title="Rotate the view to the opposite side">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.7 9A7 7 0 0 1 18 6l2 2M4 16l2 2a7 7 0 0 0 12.3-3"/></svg>
+            Flip side
+          </button>
+          <button class="button" id="resetButton" type="button" title="Return to the initial open inside view">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 0 2.6-6.4L3 7"/><path d="M3 3v4h4"/></svg>
+            Reset view
+          </button>
+        </div>
+
+        <div class="adjustments" aria-label="Rotation sliders">
+          <div class="range-field">
+            <div class="range-heading">
+              <label for="yawSlider">Horizontal rotation</label>
+              <output id="yawValue" for="yawSlider">348°</output>
+            </div>
+            <input id="yawSlider" type="range" min="0" max="360" step="1" value="348" aria-label="Horizontal rotation from 0 to 360 degrees">
+          </div>
+          <div class="range-field">
+            <div class="range-heading">
+              <label for="pitchSlider">Tilt</label>
+              <output id="pitchValue" for="pitchSlider">−5°</output>
+            </div>
+            <input id="pitchSlider" type="range" min="-70" max="70" step="1" value="-5" aria-label="Tilt from minus 70 to plus 70 degrees">
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const scene = document.getElementById("scene");
+      const pamphlet = document.getElementById("pamphlet");
+      const foldButton = document.getElementById("foldButton");
+      const unfoldButton = document.getElementById("unfoldButton");
+      const flipButton = document.getElementById("flipButton");
+      const resetButton = document.getElementById("resetButton");
+      const yawSlider = document.getElementById("yawSlider");
+      const pitchSlider = document.getElementById("pitchSlider");
+      const yawValue = document.getElementById("yawValue");
+      const pitchValue = document.getElementById("pitchValue");
+
+      const initialYaw = -12;
+      const initialPitch = -5;
+
+      let yaw = initialYaw;
+      let pitch = initialPitch;
+      let folded = false;
+      let drag = null;
+
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const normalise = value => ((value % 360) + 360) % 360;
+
+      function viewedSide() {
+        const angle = normalise(yaw);
+        if (angle > 85 && angle < 95) return "edge";
+        if (angle > 265 && angle < 275) return "edge";
+        return (angle < 90 || angle > 270) ? "inside" : "outside";
+      }
+
+      function updateAccessibility() {
+        const side = viewedSide();
+        pamphlet.setAttribute(
+          "aria-label",
+          `${folded ? "Folded" : "Unfolded"} pamphlet, ${side === "inside" ? "inside" : side === "outside" ? "outside" : "edge-on"} view`
+        );
+      }
+
+      function syncSliders() {
+        yawSlider.value = String(Math.round(normalise(yaw)));
+        pitchSlider.value = String(Math.round(pitch));
+        yawValue.value = `${Math.round(normalise(yaw))}°`;
+        pitchValue.value = `${pitch < 0 ? "−" : ""}${Math.abs(Math.round(pitch))}°`;
+      }
+
+      function applyRotation(announce = false) {
+        pitch = clamp(pitch, -70, 70);
+        pamphlet.style.setProperty("--yaw", `${yaw}deg`);
+        pamphlet.style.setProperty("--pitch", `${pitch}deg`);
+        syncSliders();
+        if (announce) updateAccessibility();
+      }
+
+      function setFold(nextFolded) {
+        folded = Boolean(nextFolded);
+        if (folded) {
+          // The left leaf swings onto the front as the cover; the right leaf tucks
+          // behind the center panel. Their hinges are on opposite edges, so the
+          // same 180-degree fold rotates them onto opposite sides of the stack.
+          pamphlet.style.setProperty("--left-fold", "180deg");
+          pamphlet.style.setProperty("--right-fold", "180deg");
+          pamphlet.style.setProperty("--left-depth", "3px");
+          // Keep both folded leaves in front of the center panel in +Z.
+          // The left leaf sits foremost as the Glossary cover; the right
+          // leaf is stacked just behind it. From the back, the center
+          // panel therefore remains exposed as the complete Works Cited cover.
+          pamphlet.style.setProperty("--right-depth", "1px");
+        } else {
+          pamphlet.style.setProperty("--left-fold", "0deg");
+          pamphlet.style.setProperty("--right-fold", "0deg");
+          pamphlet.style.setProperty("--left-depth", "0px");
+          pamphlet.style.setProperty("--right-depth", "0px");
+        }
+        pamphlet.classList.toggle("is-folded", folded);
+        foldButton.setAttribute("aria-pressed", String(folded));
+        unfoldButton.setAttribute("aria-pressed", String(!folded));
+        updateAccessibility();
+      }
+
+      function resetView() {
+        setFold(false);
+        yaw = initialYaw;
+        pitch = initialPitch;
+        applyRotation(true);
+      }
+
+      foldButton.addEventListener("click", () => setFold(true));
+      unfoldButton.addEventListener("click", () => setFold(false));
+
+      flipButton.addEventListener("click", () => {
+        yaw += 180;
+        applyRotation(true);
+      });
+
+      resetButton.addEventListener("click", resetView);
+
+      yawSlider.addEventListener("input", () => {
+        yaw = Number(yawSlider.value);
+        applyRotation(false);
+      });
+      yawSlider.addEventListener("change", updateAccessibility);
+
+      pitchSlider.addEventListener("input", () => {
+        pitch = Number(pitchSlider.value);
+        applyRotation(false);
+      });
+      pitchSlider.addEventListener("change", updateAccessibility);
+
+      function startDrag(event) {
+        if (event.button !== undefined && event.button !== 0) return;
+        if (event.target.closest("button, input, label")) return;
+        drag = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          yaw,
+          pitch
+        };
+        scene.classList.add("dragging");
+        scene.focus({ preventScroll: true });
+        if (scene.setPointerCapture) scene.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      }
+
+      function moveDrag(event) {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        yaw = drag.yaw + (event.clientX - drag.x) * 0.65;
+        pitch = clamp(drag.pitch - (event.clientY - drag.y) * 0.42, -70, 70);
+        applyRotation(false);
+        event.preventDefault();
+      }
+
+      function endDrag(event) {
+        if (!drag || (event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+        drag = null;
+        scene.classList.remove("dragging");
+        updateAccessibility();
+      }
+
+      scene.addEventListener("pointerdown", startDrag);
+      scene.addEventListener("pointermove", moveDrag);
+      scene.addEventListener("pointerup", endDrag);
+      scene.addEventListener("pointercancel", endDrag);
+      scene.addEventListener("lostpointercapture", endDrag);
+
+      scene.addEventListener("keydown", event => {
+        if (event.target !== scene) return;
+        const step = event.shiftKey ? 15 : 5;
+        let handled = true;
+        switch (event.key.toLowerCase()) {
+          case "arrowleft": yaw -= step; break;
+          case "arrowright": yaw += step; break;
+          case "arrowup": pitch = clamp(pitch - step, -70, 70); break;
+          case "arrowdown": pitch = clamp(pitch + step, -70, 70); break;
+          case "f": setFold(true); break;
+          case "u": setFold(false); break;
+          case "v": yaw += 180; break;
+          case "r": resetView(); break;
+          default: handled = false;
+        }
+        if (handled) {
+          event.preventDefault();
+          applyRotation(true);
+        }
+      });
+
+      applyRotation(false);
+      setFold(false);
+    })();
+  </script>
+</body>
+</html>
